@@ -108,76 +108,126 @@ async def scrape_url(url: str) -> Dict[str, Any]:
             "timestamp": datetime.now().isoformat(),
         }
 
-@app.post("/scrape", response_model=ScrapeResponse, tags=["Scraping"])
-async def scrape_single_url(request: ScrapeRequest):
-    """
-    Scrape a single URL using the FireCrawl API
+# @app.post("/scrape", response_model=ScrapeResponse, tags=["Scraping"])
+# async def scrape_single_url(request: ScrapeRequest):
+#     """
+#     Scrape a single URL using the FireCrawl API
     
-    Args:
-        request: ScrapeRequest with URL to scrape
+#     Args:
+#         request: ScrapeRequest with URL to scrape
         
-    Returns:
-        ScrapeResponse with scrape results
-    """
-    result = await scrape_url(request.url)
-    return result
+#     Returns:
+#         ScrapeResponse with scrape results
+#     """
+#     result = await scrape_url(request.url)
+#     return result
 
-@app.post("/scrape/batch", response_model=List[ScrapeResponse], tags=["Scraping"])
-async def scrape_multiple_urls(request: BatchScrapeRequest):
+# @app.post("/scrape/batch", response_model=List[ScrapeResponse], tags=["Scraping"])
+# async def scrape_multiple_urls(request: BatchScrapeRequest):
+#     """
+#     Scrape multiple URLs in parallel using the FireCrawl API
+    
+#     Args:
+#         request: BatchScrapeRequest with URLs to scrape
+        
+#     Returns:
+#         List of ScrapeResponse objects with scrape results
+#     """
+#     # Process URLs in parallel
+#     tasks = [scrape_url(url) for url in request.urls]
+#     results = []
+    
+#     # Process each URL and collect results
+#     for url in request.urls:
+#         result = await scrape_url(url)
+#         results.append(result)
+    
+#     return results
+
+# @app.post("/search-and-scrape", response_model=List[ScrapeResponse], tags=["Research"])
+# async def search_and_scrape(query: str, max_results: int = 5):
+#     """
+#     Search for URLs related to a query and scrape them
+    
+#     This endpoint would integrate with search APIs like Tavily or OpenAI
+#     to find relevant URLs and then scrape them.
+    
+#     NOTE: This is a placeholder that would need to be implemented with
+#     actual search API integration.
+    
+#     Args:
+#         query: Search query
+#         max_results: Maximum number of results to return
+        
+#     Returns:
+#         List of ScrapeResponse objects with scrape results
+#     """
+#     # This is where you would integrate with Tavily or other search APIs
+#     # For now, return a placeholder response
+#     return [
+#         {
+#             "url": "https://example.com",
+#             "content": "This is a placeholder. Implement search API integration.",
+#             "status": "placeholder",
+#             "timestamp": datetime.now().isoformat(),
+#         }
+#     ]
+
+# @app.get("/health", tags=["System"])
+# async def health_check():
+#     """Check if the API is running"""
+#     return {"status": "healthy", "timestamp": datetime.now().isoformat()}
+
+# Direct API functions for use without running the FastAPI server
+async def direct_scrape_url(url: str) -> Dict[str, Any]:
     """
-    Scrape multiple URLs in parallel using the FireCrawl API
+    Send a scrape request directly to FireCrawl API without running the FastAPI server
     
     Args:
-        request: BatchScrapeRequest with URLs to scrape
+        url: The URL to scrape
         
     Returns:
-        List of ScrapeResponse objects with scrape results
+        Dict with scrape results
     """
-    # Process URLs in parallel
-    tasks = [scrape_url(url) for url in request.urls]
+    return await scrape_url(url)
+
+async def direct_scrape_multiple_urls(urls: List[str]) -> List[Dict[str, Any]]:
+    """
+    Scrape multiple URLs directly without running the FastAPI server
+    
+    Args:
+        urls: List of URLs to scrape
+        
+    Returns:
+        List of dictionaries with scrape results
+    """
     results = []
-    
-    # Process each URL and collect results
-    for url in request.urls:
-        result = await scrape_url(url)
+    for url in urls:
+        result = await direct_scrape_url(url)
         results.append(result)
-    
     return results
 
-@app.post("/search-and-scrape", response_model=List[ScrapeResponse], tags=["Research"])
-async def search_and_scrape(query: str, max_results: int = 5):
-    """
-    Search for URLs related to a query and scrape them
+# Example usage
+def example_scrape():
+    import asyncio
     
-    This endpoint would integrate with search APIs like Tavily or OpenAI
-    to find relevant URLs and then scrape them.
-    
-    NOTE: This is a placeholder that would need to be implemented with
-    actual search API integration.
-    
-    Args:
-        query: Search query
-        max_results: Maximum number of results to return
+    async def run_example():
+        # Scrape a single URL
+        result = await direct_scrape_url("https://google.com")
+        print(f"Single URL result: {result}")
         
-    Returns:
-        List of ScrapeResponse objects with scrape results
-    """
-    # This is where you would integrate with Tavily or other search APIs
-    # For now, return a placeholder response
-    return [
-        {
-            "url": "https://example.com",
-            "content": "This is a placeholder. Implement search API integration.",
-            "status": "placeholder",
-            "timestamp": datetime.now().isoformat(),
-        }
-    ]
-
-@app.get("/health", tags=["System"])
-async def health_check():
-    """Check if the API is running"""
-    return {"status": "healthy", "timestamp": datetime.now().isoformat()}
+        # Scrape multiple URLs
+        # results = await direct_scrape_multiple_urls(["https://google.com", "https://github.com"])
+        # print(f"Multiple URL results: {results}")
+    
+    asyncio.run(run_example())
 
 if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    # Uncomment one of the options below
+    
+    # Option 1: Run the FastAPI server
+    # import uvicorn
+    # uvicorn.run(app, host="0.0.0.0", port=8000)
+    
+    # Option 2: Run the example scrape directly
+    example_scrape()
