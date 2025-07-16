@@ -1,3 +1,5 @@
+import os
+import datetime
 from typing import Literal
 
 from langchain.chat_models import init_chat_model
@@ -188,6 +190,22 @@ def human_feedback(state: ReportState, config: RunnableConfig) -> Command[Litera
         # Treat this as feedback and append it to the existing list
         return Command(goto="generate_report_plan", 
                        update={"feedback_on_report_plan": [feedback]})
+    # Handle dictionary input case
+    elif isinstance(feedback, dict):
+        # Extract feedback from the dictionary if available, otherwise use the whole dict as feedback
+        feedback_str = feedback.get('feedback', str(feedback))
+
+        if feedback_str:
+            # Treat this as approve and kick off section writing
+            return Command(goto=[
+                Send("build_section_with_web_research", {"topic": topic, "section": s, "search_iterations": 0}) 
+                for s in sections 
+                if s.research
+            ])  
+        else:
+            # Treat this as feedback and append it to the existing list
+            return Command(goto="generate_report_plan", 
+                           update={"feedback_on_report_plan": [feedback_str]})
     else:
         raise TypeError(f"Interrupt value of type {type(feedback)} is not supported.")
     
