@@ -17,6 +17,7 @@ import itertools
 from exa_py import Exa
 from linkup import LinkupClient
 from tavily import AsyncTavilyClient
+from src.FireCrawlApi import server, SearchandScrapeRequest
 from azure.core.credentials import AzureKeyCredential
 from azure.search.documents.aio import SearchClient as AsyncAzureAISearchClient
 from duckduckgo_search import DDGS 
@@ -69,6 +70,7 @@ def get_search_params(search_api: str, search_api_config: Optional[Dict[str, Any
     SEARCH_API_PARAMS = {
         "exa": ["max_characters", "num_results", "include_domains", "exclude_domains", "subpages"],
         "tavily": ["max_results", "topic"],
+        "firecrawl": ["max_results", "topic"],
         "perplexity": [],  # Perplexity accepts no additional parameters
         "arxiv": ["load_max_docs", "get_full_documents", "load_all_available_meta"],
         "pubmed": ["top_k_results", "email", "api_key", "doc_content_chars_max"],
@@ -214,6 +216,49 @@ async def tavily_search_async(search_queries, max_results: int = 5, topic: Liter
     # Execute all searches concurrently
     search_docs = await asyncio.gather(*search_tasks)
     return search_docs
+
+@traceable
+async def firecrawl_search_async(search_queries, max_results: int = 5, topic: Literal["general", "news", "finance"] = "general", include_raw_content: bool = True):
+    """
+    Performs concurrent web searches with the Tavily API
+
+    Args:
+        search_queries (List[str]): List of search queries to process
+        max_results (int): Maximum number of results to return
+        topic (Literal["general", "news", "finance"]): Topic to filter results by
+        include_raw_content (bool): Whether to include raw content in the results
+
+    Returns:
+            List[dict]: List of search responses from Tavily API:
+                {
+                    'query': str,
+                    'follow_up_questions': None,      
+                    'answer': None,
+                    'images': list,
+                    'results': [                     # List of search results
+                        {
+                            'title': str,            # Title of the webpage
+                            'url': str,              # URL of the result
+                            'content': str,          # Summary/snippet of content
+                            'score': float,          # Relevance score
+                            'raw_content': str|None  # Full page content if available
+                        },
+                        ...
+                    ]
+                }
+    """
+    # Create search tasks using the server's search_and_extract function directly
+    # search_tasks = []
+    # for query in search_queries:
+    #         search_tasks.append(
+    search_tasks = await server.search_and_extract(
+        SearchandScrapeRequest(search_queries=search_queries, max_results=max_results, topic="general", include_raw_content=include_raw_content),
+    )
+            #)
+
+    # Execute all searches concurrently
+    #search_docs = await asyncio.gather(*search_tasks)
+    return search_tasks
 
 @traceable
 async def azureaisearch_search_async(search_queries: list[str], max_results: int = 5, topic: str = "general", include_raw_content: bool = True) -> list[dict]:
@@ -1452,6 +1497,102 @@ async def tavily_search(
     else:
         return "No valid search results found. Please try different search queries or use a different search API."
 
+FIRECRAWL_SEARCH_DESCRIPTION = (
+    "A search engine optimized for comprehensive, accurate, and trusted results. "
+    "Useful for when you need to answer questions about current events."
+)
+
+@tool(description=FIRECRAWL_SEARCH_DESCRIPTION)
+async def firecrawl_search(
+    queries: List[str],
+    max_results: Annotated[int, InjectedToolArg] = 5,
+    topic: Annotated[Literal["general", "news", "finance"], InjectedToolArg] = "general",
+    config: RunnableConfig = None
+) -> str:
+    """
+    Fetches results from Tavily search API.
+
+    Args:
+        queries (List[str]): List of search queries
+        max_results (int): Maximum number of results to return
+        topic (Literal['general', 'news', 'finance']): Topic to filter results by
+
+    Returns:
+        str: A formatted string of search results
+    """
+    # Use tavily_search_async with include_raw_content=True to get content directly
+    search_results = await firecrawl_search_async(
+        queries,
+        max_results=max_results,
+        topic=topic,
+        include_raw_content=True
+    )
+
+    # Format the search results directly using the raw_content already provided
+    formatted_output = f"Search results: \n\n"
+    
+    # Deduplicate results by URL
+    unique_results = {}
+    for response in search_results:
+        for result in response['results']:
+            url = result['url']
+            if url not in unique_results:
+                unique_results[url] = {**result, "query": response['query']}
+
+    async def noop():
+        return None
+
+    configurable = Configuration.from_runnable_config(config)
+    max_char_to_include = 30_000
+    # TODO: share this behavior across all search implementations / tools
+    if configurable.process_search_results == "summarize":
+        if configurable.summarization_model_provider == "anthropic":
+            extra_kwargs = {"betas": ["extended-cache-ttl-2025-04-11"]}
+        else:
+            extra_kwargs = {}
+
+        summarization_model = init_chat_model(
+            model=configurable.summarization_model,
+            model_provider=configurable.summarization_model_provider,
+            max_retries=configurable.max_structured_output_retries,
+            **extra_kwargs
+        )
+        summarization_tasks = [
+            noop() if not result.get("raw_content") else summarize_webpage(summarization_model, result['raw_content'][:max_char_to_include])
+            for result in unique_results.values()
+        ]
+        summaries = await asyncio.gather(*summarization_tasks)
+        unique_results = {
+            url: {'title': result['title'], 'content': result['content'] if summary is None else summary}
+            for url, result, summary in zip(unique_results.keys(), unique_results.values(), summaries)
+        }
+    elif configurable.process_search_results == "split_and_rerank":
+        embeddings = init_embeddings("openai:text-embedding-3-small")
+        results_by_query = itertools.groupby(unique_results.values(), key=lambda x: x['query'])
+        all_retrieved_docs = []
+        for query, query_results in results_by_query:
+            retrieved_docs = split_and_rerank_search_results(embeddings, query, query_results)
+            all_retrieved_docs.extend(retrieved_docs)
+
+        stitched_docs = stitch_documents_by_url(all_retrieved_docs)
+        unique_results = {
+            doc.metadata['url']: {'title': doc.metadata['title'], 'content': doc.page_content}
+            for doc in stitched_docs
+        }
+
+    # Format the unique results
+    for i, (url, result) in enumerate(unique_results.items()):
+        formatted_output += f"\n\n--- SOURCE {i+1}: {result['title']} ---\n"
+        formatted_output += f"URL: {url}\n\n"
+        formatted_output += f"SUMMARY:\n{result['content']}\n\n"
+        if result.get('raw_content'):
+            formatted_output += f"FULL CONTENT:\n{result['raw_content'][:max_char_to_include]}"  # Limit content size
+        formatted_output += "\n\n" + "-" * 80 + "\n"
+    
+    if unique_results:
+        return formatted_output
+    else:
+        return "No valid search results found. Please try different search queries or use a different search API."
 
 @tool
 async def azureaisearch_search(queries: List[str], max_results: int = 5, topic: str = "general") -> str:
@@ -1512,7 +1653,10 @@ async def select_and_execute_search(search_api: str, query_list: list[str], para
     Raises:
         ValueError: If an unsupported search API is specified
     """
-    if search_api == "tavily":
+
+    if search_api == "firecrawl":
+        return await firecrawl_search.ainvoke({'queries': query_list, **params_to_pass})
+    elif search_api == "tavily":
         # Tavily search tool used with both workflow and agent 
         # and returns a formatted source string
         return await tavily_search.ainvoke({'queries': query_list, **params_to_pass})

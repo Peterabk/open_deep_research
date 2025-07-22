@@ -3,7 +3,7 @@ import asyncio
 from fastapi import FastAPI, HTTPException, BackgroundTasks
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, AnyUrl, Field
-from typing import List, Dict, Any, Optional, Union
+from typing import List, Dict, Any, Optional, Union, Literal
 import httpx
 import logging
 import time
@@ -84,7 +84,7 @@ class SearchandScrapeRequest(BaseModel):
         # include_raw_content (bool): Whether to include raw content in the results
     search_queries: List[str]
     max_results: int = 5
-    topic: str = "general"
+    topic: Literal["general", "news", "finance"] = "general"
     include_raw_content: bool = True
 
 class SearchandScrapeResponse(BaseModel):
@@ -583,13 +583,13 @@ async def search_and_extract(request: SearchandScrapeRequest):
             scrape_results = await scrape_multiple_urls(batch_request)
             
             # Format as Tavily-style response
-            tavily_style_response = SearchandScrapeResponse(
-                query=query,
-                results=scrape_results,
-                follow_up_questions=None, # Could generate these with an LLM in the future
-                answer=None, # Could generate this with an LLM in the future
-                images=[] # Could extract images in the future
-            )
+            tavily_style_response = {
+                "query": query,
+                "results": scrape_results,
+                "follow_up_questions": None, # Could generate these with an LLM in the future
+                "answer": None, # Could generate this with an LLM in the future
+                "images": [] # Could extract images in the future
+            }
             
             # Log completion with timing
             # elapsed_time = time.time() - start_time
@@ -645,15 +645,15 @@ def example_scrape():
         
         # Example 4: Search and extract content in one go
         print("\n==== Example 4: Search and extract content ====")
-        search_extract_result = await search_and_extract(SearchandScrapeRequest(search_queries=["artificial intelligence"], max_results=3))
+        search_extract_result = await search_and_extract(SearchandScrapeRequest(search_queries=["Flying Cars"], max_results=5))
         #print(search_extract_result)
         for search in search_extract_result:
-            for i in range(len(search.results)):
-                print(search.results[i].url)
-                print(search.results[i].title)
-                print(search.results[i].content)
-                print(search.results[i].raw_content)
-                print(search.results[i].status)
+            for i in range(len(search["results"])):
+                print(search["results"][i]["url"])
+                print(search["results"][i]["title"])
+                print(search["results"][i]["content"])
+                print(search["results"][i]["raw_content"])
+                print(search["results"][i]["status"])
 
         # for i, res in enumerate(search_extract_result):
         #     print(f"Result {i+1} - URL: {res['url']}, Status: {res['status']}")
