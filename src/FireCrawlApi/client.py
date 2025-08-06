@@ -224,7 +224,7 @@ async def batch_scrape_url(urls: List[str], include_raw_content: bool = True) ->
             # Setup polling with timeout
             max_attempts = 40  # Maximum polling attempts (5 seconds * 30 = 150 seconds max wait)
             attempts = 0
-            poll_interval = 5  # seconds between polls
+            poll_interval = 15  # seconds between polls
             job_id = response_result['id']
             url = response_result['url']
             
@@ -297,6 +297,10 @@ async def batch_scrape_url(urls: List[str], include_raw_content: bool = True) ->
         error_msg = f"[batch_scrape_url] HTTP error {e.response.status_code}"
         logger.error(error_msg)
         return [{
+            "title": None,
+            "content": None,
+            "raw_content": None,
+            "score": None,
             "url": url,
             "status": "error",
             "error": error_msg,
@@ -310,6 +314,10 @@ async def batch_scrape_url(urls: List[str], include_raw_content: bool = True) ->
         
         # Return error response for each URL in the batch
         return [{
+            "title": None,
+            "content": None,
+            "raw_content": None,
+            "score": None,
             "url": url,
             "status": "error",
             "error": error_msg,
@@ -323,6 +331,10 @@ async def batch_scrape_url(urls: List[str], include_raw_content: bool = True) ->
         
         # Return error response for each URL in the batch
         return [{
+            "title": None,
+            "content": None,
+            "raw_content": None,
+            "score": None,
             "url": url,
             "status": "error",
             "error": error_msg,

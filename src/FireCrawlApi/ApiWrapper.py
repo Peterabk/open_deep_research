@@ -7,6 +7,7 @@ from typing import List, Dict, Any, Optional, Union, Literal
 import httpx
 import logging
 import time
+import subprocess
 from datetime import datetime
 
 # Configure logging with timestamp
@@ -166,6 +167,14 @@ async def direct_scrape_multiple_urls(urls: List[str]) -> List[Dict[str, Any]]:
     
     return results
 
+def kill_chrome_in_pod():
+    pod_name = subprocess.check_output(
+        "kubectl get pods -l app=firecrawl-api -o jsonpath='{.items[0].metadata.name}'",
+        shell=True,
+        text=True
+    ).strip().strip("'")
+    subprocess.run(f"kubectl exec {pod_name} -- pkill chrome || true", shell=True)
+
 async def scrape_url(url: str, include_raw_content: bool = True) -> Dict[str, Any]:
     """
     Send a scrape request to FireCrawl API for a single URL
@@ -229,6 +238,8 @@ async def scrape_url(url: str, include_raw_content: bool = True) -> Dict[str, An
 
             if 'description' in response_result['data']['metadata']:
                 description = response_result['data']['metadata']['description']
+            
+            #kill_chrome_in_pod()
             
             # Return response data and status
             return {
@@ -615,14 +626,15 @@ def example_scrape():
     
     async def run_example():
         # Example 1: Scrape a single URL
-        # print("\n==== Example 1: Scraping single URL ====")
-        # result = await scrape_single_url(ScrapeRequest(url="https://www.ibm.com/think/topics/artificial-intelligence"))
-        # if result['status'] == 'success':
-        #     print(f"Single URL result: ")
-        #     print(f"Single URL url: {result['url']}")
-        #     print(f"Single URL title: {result['title']}")
-        #     print(f"Single URL content: {result['content']}")
-        #     print(f"Single URL raw_content: {result['raw_content']}")
+        print("\n==== Example 1: Scraping single URL ====")
+        result = await scrape_single_url(ScrapeRequest(url="https://www.ibm.com/think/topics/artificial-intelligence"))
+        if result['status'] == 'success':
+            print(f"Single URL result: ")
+            print(f"Single URL url: {result['url']}")
+            print(f"Single URL title: {result['title']}")
+            print(f"Single URL content: {result['content']}")
+            print(f"Single URL raw_content: {result['raw_content']}")
+        return result['status']
         
         # # Example 2: Scrape multiple URLs
         # print("\n==== Example 2: Scraping multiple URLs ====")
@@ -644,16 +656,16 @@ def example_scrape():
         #     print(f"URL {i+1}: {url}")
         
         # Example 4: Search and extract content in one go
-        print("\n==== Example 4: Search and extract content ====")
-        search_extract_result = await search_and_extract(SearchandScrapeRequest(search_queries=["Flying Cars"], max_results=5))
-        #print(search_extract_result)
-        for search in search_extract_result:
-            for i in range(len(search["results"])):
-                print(search["results"][i]["url"])
-                print(search["results"][i]["title"])
-                print(search["results"][i]["content"])
-                print(search["results"][i]["raw_content"])
-                print(search["results"][i]["status"])
+        # print("\n==== Example 4: Search and extract content ====")
+        # search_extract_result = await search_and_extract(SearchandScrapeRequest(search_queries=["Flying Cars"], max_results=5))
+        # #print(search_extract_result)
+        # for search in search_extract_result:
+        #     for i in range(len(search["results"])):
+        #         print(search["results"][i]["url"])
+        #         print(search["results"][i]["title"])
+        #         print(search["results"][i]["content"])
+        #         print(search["results"][i]["raw_content"])
+        #         print(search["results"][i]["status"])
 
         # for i, res in enumerate(search_extract_result):
         #     print(f"Result {i+1} - URL: {res['url']}, Status: {res['status']}")
@@ -665,6 +677,20 @@ def example_scrape():
     # Run the async examples
     asyncio.run(run_example())
 
+
+async def run_singleurl_testcase(url):
+    print("\n==== Example 1: Scraping single URL ====")
+    result = await scrape_single_url(ScrapeRequest(url=url))
+    if result['status'] == 'success':
+        print(f"Single URL result: ")
+        print(f"Single URL url: {result['url']}")
+        print(f"Single URL title: {result['title']}")
+        print(f"Single URL content: {result['content']}")
+        print(f"Single URL raw_content: {result['raw_content']}")
+    return result['status']
+
+
+
 if __name__ == "__main__":
     # Uncomment one of the options below
     
@@ -673,4 +699,30 @@ if __name__ == "__main__":
     # uvicorn.run(app, host="0.0.0.0", port=8000)
     
     # Option 2: Run the example scrape directly
-    example_scrape()
+    urls = ["www.google.com", "www.github.com", "www.ibm.com", "www.microsoft.com", "www.apple.com"]
+    #example_scrape()
+
+    # Option 3: Run the single URL scrape directly
+    iteration_counter = 1
+    result = asyncio.run(run_singleurl_testcase("https://www.ibm.com/think/topics/artificial-intelligence"))
+
+    while result == "success":
+        iteration_counter += 1
+        result = asyncio.run(run_singleurl_testcase("https://www.ibm.com/think/topics/artificial-intelligence"))
+
+    print("\n==== After initial failure ====")
+    list_result = []
+    second_iteration_counter = 1
+    continue_loop = True
+    while continue_loop:
+        second_iteration_counter += 1
+        current_result = []
+        for url in urls:
+            result = asyncio.run(run_singleurl_testcase(url))
+            current_result.append(result)
+        list_result.append(current_result)
+
+        if "success" not in list_result[-1]:
+            continue_loop = False
+            
+    
